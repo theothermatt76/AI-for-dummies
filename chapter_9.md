@@ -1,117 +1,130 @@
-# Chapter 8: Security Architecture and Design with AI**
+# Chapter 9: Building Custom Security Agents – Part 1 (Fundamentals)
 
-Security architecture and design decisions have long-term consequences. A single flawed design choice can create years of technical debt and increased risk. AI serves as an exceptional collaborative partner in this domain — rapidly generating options, performing threat modeling, critiquing designs, and ensuring alignment with standards and best practices.
+By this point in the book, you have mastered prompting and are using AI daily for productivity, threat intel, incident response, and architecture. The next major leap is moving from _using_ AI to _building_ with AI—specifically, creating custom agents that can autonomously or semi-autonomously handle security tasks.
 
-This chapter focuses on using AI to improve both the speed and quality of architecture work while maintaining your role as the final decision maker.
+This chapter (Part 1) covers the fundamentals. Chapter 10 will dive into advanced multi-agent systems and sophisticated workflows.
 
-## Threat Modeling with AI
+## Understanding Agents vs Tools vs copilots
 
-AI dramatically accelerates and improves the consistency of threat modeling exercises.
+-   **Tools**: Simple functions the model can call (e.g., run a query, search a database).
+-   **Copilots**: Interactive assistants that help you in real time.
+-   **Agents**: Systems that can reason, use tools, maintain memory, plan, and execute multi-step tasks toward a goal, often with some autonomy.
 
-**STRIDE Threat Modeling Prompt:**
+**Key Frameworks in 2026**:
+
+-   **LangChain / LangGraph**: Most mature and flexible for complex workflows.
+-   **LlamaIndex**: Excellent for RAG-heavy agents.
+-   **CrewAI**: Great for role-based multi-agent teams.
+-   **AutoGen / Microsoft Semantic Kernel**: Strong for conversational multi-agent setups.
+-   **OpenAI Swarm**: Lightweight and elegant for orchestration.
+
+**Recommendation for Security Teams**: Start with LangChain + LangGraph for most use cases. It offers excellent debugging, persistence, and control.
+
+## Core Concepts You Must Understand
+
+1.  **Reasoning Loops** (ReAct, Plan-and-Execute, etc.)
+2.  **Tool Use / Function Calling** — Giving agents the ability to interact with external systems.
+3.  **Memory** — Short-term (current task), long-term (vector store), and entity memory.
+4.  **State Management** — Tracking progress across steps.
+5.  **Guardrails & Safety** — Preventing harmful actions.
+
+## Building Your First Security Agent
+
+**Example Project: Security Log Analysis Agent**
+
+**Step-by-Step Setup** (using LangChain + Ollama or Claude):
 ```
-You are a principal security architect with deep expertise in threat modeling. 
+from langchain_openai import ChatOpenAI  # or ChatOllama
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate
 
-Apply the STRIDE methodology (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege) to the following system:
+# Define tools
+@tool
+def query_siem(log_query: str) -> str:
+    """Query the SIEM for logs"""
+    # Implement actual integration
+    return "Sample log results..."
 
-[Description of the architecture, components, data flows, trust boundaries]
+@tool
+def enrich_ioc(ioc: str) -> str:
+    """Enrich IOC with threat intel"""
+    # Call VirusTotal, MISP, etc.
+    pass
 
-For each major component or data flow:
-- List relevant threats
-- Rate likelihood and impact (Low/Med/High)
-- Suggest specific mitigations or controls
-- Note any assumptions or areas needing more information
+tools = [query_siem, enrich_ioc]
 
-Present results in a clear markdown table format.
-```
-**PASTA or Hybrid Approaches:**
-```
-Perform a PASTA (Process for Attack Simulation and Threat Analysis) style threat model. Focus on realistic attack scenarios relevant to our industry [e.g., financial services] and current threat landscape.
-```
-**Comparative Threat Modeling:**
-```
-Compare two architecture options using STRIDE. Which design has better inherent security posture and why? Provide specific recommendations to strengthen the weaker option.
-```
-## Secure Architecture Diagram Generation and Critique
+# Create agent
+llm = ChatOpenAI(model="claude-3-5-sonnet")  # or local model
 
-Modern AI models (especially multimodal ones) can work directly with diagrams.
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a senior SOC analyst agent..."),
+    ("placeholder", "{chat_history}"),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
 
-**Diagram Critique Prompt:**
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 ```
-You are an expert secure architecture reviewer. Analyze this system architecture description/diagram:
+**Basic Agent Prompt (System Message):**
+```
+You are SecAnalystAgent, an autonomous security operations agent. 
+Your goals: Investigate alerts, correlate events, enrich IOCs, and recommend actions.
+Always think step-by-step. Use tools when needed. Never take destructive actions without human approval.
+```
+## Memory Management for Security Agents
 
-[Text description or image upload]
+-   **Conversation Memory**: Keeps context of the current investigation.
+-   **Vector Store Memory**: Stores past incidents, playbooks, and threat intel for RAG.
+-   **Entity Memory**: Tracks specific IOCs, hosts, or users across sessions.
 
-Provide:
-1. Overall security posture assessment
-2. Key risks and single points of failure
-3. Alignment with Zero Trust principles
-4. Specific improvement recommendations with rationale
-5. Suggested alternative patterns (e.g., service mesh, API gateway usage)
+**Example with Chroma:**
 ```
-**Generation Prompt:**
-```
-Generate a high-level secure architecture diagram description (in Mermaid or PlantUML syntax) for [use case, e.g., a customer-facing microservices platform with sensitive data]. Incorporate Zero Trust, defense-in-depth, and least privilege principles.
-```
-## Control Selection and Gap Analysis
+from langchain_community.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
 
-AI helps select the right controls and identify gaps efficiently.
+vectorstore = Chroma(collection_name="security_knowledge", embedding_function=OpenAIEmbeddings())
+```
+## Tool Creation Best Practices for Security
 
-**Control Selection Prompt:**
-```
-For this new system [description], recommend a layered set of security controls across the following categories:
-- Identity & Access Management
-- Network & Segmentation
-- Data Protection
-- Logging & Monitoring
-- Resilience & Recovery
+-   SIEM / EDR query tools
+-   Ticketing system integration (create/update tickets)
+-   Threat intel lookup
+-   Code analysis tools
+-   Notification tools (Slack/Teams/email with approval)
 
-Map recommendations to relevant frameworks (NIST CSF 2.0, CIS, Zero Trust, etc.). Prioritize based on risk.
-```
-**Gap Analysis Prompt:**
-```
-Evaluate this architecture through a Zero Trust lens (never trust, always verify; assume breach; least privilege; etc.).
+**Security-First Tool Design**:
 
-Identify:
-- Strong Zero Trust elements already present
-- Major gaps
-- Specific implementation recommendations for identity, devices, networks, applications, and data
-- Potential challenges during implementation
-```
-## Generating Secure Configuration Baselines
+-   All tools that can take action should require human confirmation for high-impact operations.
+-   Implement audit logging for every agent action.
+-   Rate limiting and safety checks.
 
-AI can help create and maintain hardened configuration baselines.
+## Exercise: Build Your First Agent Today
 
-**Baseline Generation Prompt:**
-```
-Create a secure configuration baseline for [technology, e.g., Kubernetes clusters on EKS]. Include:
-- Control categories (RBAC, network policies, pod security, secrets management, etc.)
-- Specific recommended settings with justification
-- Monitoring/audit recommendations
-- Exception handling process
-```
-**Review Prompt:**
-```
-Review this existing configuration baseline against current best practices and known attack techniques. Suggest updates and hardening opportunities.
-```
-## Exercise: AI-Assisted Architecture Review
+1.  Install LangChain and choose a model (local or cloud).
+2.  Create a simple “Vulnerability Enrichment Agent” with two tools: one for CVE lookup and one for threat context.
+3.  Give it a goal: “Enrich and risk-score these 5 CVEs for our environment.”
+4.  Run it and observe the reasoning trace.
+5.  Iterate by adding memory and better tools.
 
-1.  Select a current or recent system architecture in your environment.
-2.  Have AI perform a full STRIDE threat model.
-3.  Ask for Zero Trust gap analysis and control recommendations.
-4.  Generate at least one alternative improved design.
-5.  Document the key insights and any changes you would make based on the AI input.
+**Expected Outcome**: Within a few hours, you will have a working agent that can meaningfully assist with repetitive security tasks.
 
-Compare the depth and speed to how you would have done this manually.
+## Common Pitfalls (Part 1)
+
+-   Over-autonomy too early → Start with human-in-the-loop.
+-   Poor tool design → Tools should be focused and well-documented.
+-   Ignoring cost/latency → Local models + caching are your friends for high-volume work.
+-   Lack of evaluation → Always test agents on historical data before live use.
 
 ## Chapter Summary and Key Takeaways
 
--   AI is an outstanding “senior colleague” for architecture work — fast at exploring options and spotting issues.
--   Combine AI with your deep business and environmental knowledge for best results.
--   Use structured frameworks (STRIDE, Zero Trust, etc.) in prompts for consistent, high-quality output.
--   Always validate AI-generated designs against real constraints (performance, cost, compliance, legacy systems).
--   Version-control architecture documents and use AI to help maintain them over time.
+-   Agents represent the shift from conversational AI to actionable, goal-oriented systems.
+-   Start simple: one agent, few tools, strong system prompt, good memory.
+-   Security agents must emphasize safety, auditability, and human oversight.
+-   The fundamentals you learn here form the foundation for sophisticated multi-agent systems in the next chapter.
+-   Treat agent development like software engineering — version control, testing, documentation, and monitoring are essential.
 
-**Security Architect Tip:** Create a dedicated “Architecture AI Workspace” (Claude Project or local RAG) that contains your organization’s security principles, reference architectures, risk appetite statements, and past review findings. This turns AI into a true institutional knowledge partner for all future design work.
+**Security Architect Tip**: Create an internal “Agent Development Playbook” that defines standards for tool creation, prompt templates, evaluation criteria, and approval processes. This ensures consistency and reduces risk as your team scales agent development.
 
-With improved architecture capabilities, you are now ready to move into one of the most exciting areas: building custom security agents. Chapter 9 begins the journey into agentic AI systems.
+You now have the foundational skills to build useful security agents. In Chapter 10, we will expand this into multi-agent teams capable of complex, collaborative security work such as autonomous threat hunting and purple teaming.
